@@ -22,7 +22,9 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
 
     _logger.remove()
     _logger.add(sys.stderr, level=print_level)
-    _logger.add(PROJECT_ROOT / f"logs/{log_name}.log", level=logfile_level)
+    log_dir = PROJECT_ROOT / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    _logger.add(log_dir / f"{log_name}.log", level=logfile_level)
     return _logger
 
 

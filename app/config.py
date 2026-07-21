@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 import tomllib
 from pathlib import Path
@@ -9,7 +10,12 @@ from pydantic import BaseModel, Field
 
 
 def get_project_root() -> Path:
-    """获取项目根目录"""
+    """获取项目根目录。
+
+    打包为 exe 后，以可执行文件所在目录为根，便于旁路放置 config/、workspace/ 等。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
