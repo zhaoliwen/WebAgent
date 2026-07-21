@@ -239,7 +239,8 @@ class Config:
         }
 
         # 优先使用配置文件中的 api_key，如果没有则从环境变量 DASHSCOPE_API_KEY 读取
-        api_key = base_llm.get("api_key") or os.getenv("DASHSCOPE_API_KEY")
+        # 都没有时先回退为空字符串，保证程序能启动（GUI 会在运行前注入用户输入的 key）
+        api_key = base_llm.get("api_key") or os.getenv("DASHSCOPE_API_KEY") or ""
 
         default_settings = {
             "model": base_llm.get("model"),

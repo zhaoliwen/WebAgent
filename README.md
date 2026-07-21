@@ -193,3 +193,6 @@ OpenManus is built by contributors from MetaGPT. Huge thanks to this agent commu
   url = {https://doi.org/10.5281/zenodo.15186407},
 }
 ```
+
+## python
+need 3.12
