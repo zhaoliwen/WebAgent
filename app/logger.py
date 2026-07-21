@@ -21,7 +21,9 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
     )  # 使用前缀名称命名日志
 
     _logger.remove()
-    _logger.add(sys.stderr, level=print_level)
+    # 无控制台打包（windowed）时 sys.stderr 为 None，不能作为 loguru sink
+    if sys.stderr is not None:
+        _logger.add(sys.stderr, level=print_level)
     log_dir = PROJECT_ROOT / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     _logger.add(log_dir / f"{log_name}.log", level=logfile_level)
