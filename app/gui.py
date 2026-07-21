@@ -12,9 +12,10 @@ class ManusGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("OpenManus - Manus Agent")
-        self.root.geometry("860x640")
+        self.root.geometry("860x780")
 
         self.log_queue: queue.Queue = queue.Queue()
+        self.result_queue: queue.Queue = queue.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task | None = None
         self._log_handler_id: int | None = None
@@ -23,6 +24,7 @@ class ManusGUI:
         self._build_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(100, self._poll_log_queue)
+        self.root.after(100, self._poll_result_queue)
 
     def _build_widgets(self):
         pad = {"padx": 10, "pady": 5}
@@ -66,9 +68,18 @@ class ManusGUI:
         log_frame.pack(fill=tk.BOTH, expand=True, **pad)
         tk.Label(log_frame, text="执行日志:").pack(anchor=tk.W)
         self.log_area = scrolledtext.ScrolledText(
-            log_frame, wrap=tk.WORD, state=tk.DISABLED
+            log_frame, wrap=tk.WORD, state=tk.DISABLED, height=12
         )
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        # 执行结果输出区域
+        result_frame = tk.Frame(self.root)
+        result_frame.pack(fill=tk.BOTH, expand=True, **pad)
+        tk.Label(result_frame, text="执行结果:").pack(anchor=tk.W)
+        self.result_area = scrolledtext.ScrolledText(
+            result_frame, wrap=tk.WORD, state=tk.DISABLED, height=10
+        )
+        self.result_area.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
     # ---------- 日志 ----------
 
@@ -90,6 +101,23 @@ class ManusGUI:
         # loguru sink：在 agent 所在线程被调用，仅做入队，由 UI 线程消费
         self.log_queue.put(str(message))
 
+    # ---------- 执行结果 ----------
+
+    def _set_result(self, text: str):
+        self.result_area.configure(state=tk.NORMAL)
+        self.result_area.delete("1.0", tk.END)
+        self.result_area.insert(tk.END, text)
+        self.result_area.see(tk.END)
+        self.result_area.configure(state=tk.DISABLED)
+
+    def _poll_result_queue(self):
+        try:
+            while True:
+                self._set_result(self.result_queue.get_nowait())
+        except queue.Empty:
+            pass
+        self.root.after(100, self._poll_result_queue)
+
     # ---------- 任务控制 ----------
 
     def start_task(self):
@@ -105,6 +133,7 @@ class ManusGUI:
 
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
+        self._set_result("")  # 开始新任务前清空上次结果
         self._append_log(f"[任务] 开始执行: {prompt}\n")
 
         self._worker_thread = threading.Thread(
@@ -146,12 +175,16 @@ class ManusGUI:
         agent = await Manus.create()
         try:
             self._task = asyncio.ensure_future(agent.run(prompt))
-            await self._task
+            result = await self._task
             self.log_queue.put("[任务] 请求处理完成。\n")
+            # 将 agent.run 返回值写入结果区域
+            self.result_queue.put(result if result else "(无返回结果)")
         except asyncio.CancelledError:
             self.log_queue.put("[任务] 已被用户停止。\n")
+            self.result_queue.put("[任务已停止]")
         except Exception as e:
             self.log_queue.put(f"[错误] {e}\n")
+            self.result_queue.put(f"[错误] {e}")
         finally:
             if self._log_handler_id is not None:
                 logger.remove(self._log_handler_id)
