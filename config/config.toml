@@ -64,15 +64,14 @@ temperature = 0.0                          # Controls randomness for vision mode
 [browser]
 # Whether to run browser in headless mode (default: false)
 headless = false
-# Disable browser security features (default: true)
-disable_security = true
-# Extra arguments to pass to the browser
-# 添加一些反检测参数，减少被网站封锁的可能性
+# Windows 下不要开 disable_security，否则会弹出不受支持的命令行标记黄条
+disable_security = false
+# Extra arguments to pass to the browser（仅保留 Windows 可用参数）
 extra_chromium_args = [
     "--disable-blink-features=AutomationControlled",
-    "--disable-dev-shm-usage",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
+    "--disable-infobars",
+    "--no-first-run",
+    "--no-default-browser-check",
     "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 # Path to a Chrome instance to use to connect to your normal browser

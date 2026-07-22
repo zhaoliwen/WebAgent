@@ -265,6 +265,24 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         "打开浏览器时可能再次启动 livan 自身"
                     )
 
+            # Windows 下过滤 Linux 专用参数，避免 Chromium 顶部黄条警告
+            if sys.platform == "win32":
+                win_block = {
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                }
+                extra = browser_config_kwargs.get("extra_chromium_args") or []
+                if isinstance(extra, list):
+                    browser_config_kwargs["extra_chromium_args"] = [
+                        a
+                        for a in extra
+                        if not any(str(a).startswith(b) for b in win_block)
+                    ]
+                # 打包用 CDP 拉起本机浏览器时，同样不要开 disable_security
+                if browser_config_kwargs.get("chrome_instance_path"):
+                    browser_config_kwargs["disable_security"] = False
+
             self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
 
         if self.context is None:
