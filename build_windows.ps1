@@ -48,6 +48,14 @@ if (Test-Path $knowledgeSrc) {
     Copy-Item $knowledgeSrc $knowledgeDst -Recurse -Force
 }
 
+# browser_use 静态资源（防止 collect_data_files 遗漏 buildDomTree.js）
+$buJs = Join-Path $Root "my_ai_env\Lib\site-packages\browser_use\dom\buildDomTree.js"
+$buDstDir = Join-Path $DistDir "_internal\browser_use\dom"
+if (Test-Path $buJs) {
+    New-Item -ItemType Directory -Force -Path $buDstDir | Out-Null
+    Copy-Item $buJs (Join-Path $buDstDir "buildDomTree.js") -Force
+}
+
 # workspace + logs
 New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "workspace") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "logs") | Out-Null

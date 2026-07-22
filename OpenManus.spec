@@ -49,7 +49,12 @@ try:
     datas += collect_data_files("tiktoken_ext")
 except Exception:
     pass
-for pkg in ("openai", "httpx", "certifi"):
+# browser_use 操作网页依赖 dom/buildDomTree.js（色块高亮与元素索引）
+try:
+    datas += collect_data_files("browser_use")
+except Exception:
+    pass
+for pkg in ("openai", "httpx", "certifi", "browser_use", "playwright"):
     try:
         datas += copy_metadata(pkg)
     except Exception:
