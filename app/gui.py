@@ -15,6 +15,9 @@ from tkinter import scrolledtext
 import markdown
 from tkinterweb import HtmlFrame
 
+# 循环执行最大轮数；手动勾选后从此值开始倒计，每轮减一
+LOOP_MAX_ROUNDS = 30
+
 
 class ManusGUI:
     def __init__(self, root: tk.Tk):
@@ -30,6 +33,8 @@ class ManusGUI:
         self._worker_thread: threading.Thread | None = None
         # 用户点击停止时置 True，打断当前轮并阻止开启下一轮
         self._stop_requested = False
+        # 循环执行剩余次数；仅在勾选时有效，用完后自动取消勾选
+        self._loop_remaining = 0
 
         self._build_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -72,12 +77,13 @@ class ManusGUI:
             state=tk.DISABLED,
         )
         self.stop_btn.pack(side=tk.LEFT, padx=(10, 0))
-        # 勾选后：本轮结束后用相同提示词自动开启下一轮；运行中取消勾选则本轮结束后停止
+        # 勾选后：本轮结束后用相同提示词自动开启下一轮；最多 LOOP_MAX_ROUNDS 轮，用完自动取消勾选
         self.loop_var = tk.BooleanVar(value=False)
         self.loop_check = tk.Checkbutton(
             btn_frame,
-            text="循环执行",
+            text=self._loop_check_text(),
             variable=self.loop_var,
+            command=self._on_loop_toggle,
         )
         self.loop_check.pack(side=tk.LEFT, padx=(16, 0))
 
@@ -276,7 +282,10 @@ class ManusGUI:
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
         self._set_result("")  # 开始新任务前清空上次结果
-        loop_hint = "（已开启循环执行）" if self.loop_var.get() else ""
+        if self.loop_var.get():
+            loop_hint = f"（已开启循环执行，剩余 {self._loop_remaining} 轮）"
+        else:
+            loop_hint = ""
         self._append_log(f"[任务] 开始执行{loop_hint}: {prompt}\n")
 
         self._worker_thread = threading.Thread(
@@ -383,10 +392,13 @@ class ManusGUI:
 
                 if self._stop_requested:
                     break
-                # 每轮结束后再读复选框：运行中取消勾选则本轮结束后停止
-                if not self.loop_var.get():
+                # 每轮结束后消耗一次计数；未勾选 / 次数用完则停止
+                if not self._consume_loop_round():
                     break
-                self._ui_log("[任务] 循环执行：即将用相同提示词开启下一轮...")
+                self._ui_log(
+                    f"[任务] 循环执行：即将用相同提示词开启下一轮"
+                    f"（剩余 {self._loop_remaining} 轮）..."
+                )
         finally:
             if self._log_handler_id is not None:
                 try:
@@ -400,6 +412,48 @@ class ManusGUI:
     def _reset_buttons(self):
         self.start_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.DISABLED)
+
+    def _loop_check_text(self) -> str:
+        """复选框文案：勾选且仍有剩余次数时显示倒计。"""
+        if self.loop_var.get() and self._loop_remaining > 0:
+            return f"循环执行 (剩余 {self._loop_remaining})"
+        return "循环执行"
+
+    def _refresh_loop_check_text(self):
+        self.loop_check.configure(text=self._loop_check_text())
+
+    def _on_loop_toggle(self):
+        """手动勾选时重新倒计数；取消勾选则清零。"""
+        if self.loop_var.get():
+            self._loop_remaining = LOOP_MAX_ROUNDS
+            self._append_log(
+                f"[任务] 已开启循环执行，剩余 {self._loop_remaining} 轮。\n"
+            )
+        else:
+            self._loop_remaining = 0
+            self._append_log("[任务] 已取消循环执行。\n")
+        self._refresh_loop_check_text()
+
+    def _auto_uncheck_loop(self):
+        """次数用完后自动取消勾选，需再次手动勾选才会重新倒计。"""
+        self.loop_var.set(False)
+        self._loop_remaining = 0
+        self._refresh_loop_check_text()
+        self._append_log(
+            f"[任务] 循环执行已达上限 {LOOP_MAX_ROUNDS} 轮，已自动取消勾选。\n"
+        )
+
+    def _consume_loop_round(self) -> bool:
+        """一轮结束后调用：剩余次数减一；返回是否应继续下一轮。"""
+        if not self.loop_var.get():
+            return False
+        self._loop_remaining -= 1
+        if self._loop_remaining <= 0:
+            self._loop_remaining = 0
+            self.root.after(0, self._auto_uncheck_loop)
+            return False
+        self.root.after(0, self._refresh_loop_check_text)
+        return True
 
     def _on_close(self):
         self.stop_task()
