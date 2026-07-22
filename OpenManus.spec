@@ -12,6 +12,12 @@ block_cipher = None
 hiddenimports = collect_submodules("app") + [
     "tkinter",
     "tkinter.scrolledtext",
+    "markdown",
+    "markdown.extensions.fenced_code",
+    "markdown.extensions.tables",
+    "markdown.extensions.nl2br",
+    "markdown.extensions.sane_lists",
+    "tkinterweb",
     "pydantic",
     "pydantic_core",
     "loguru",
@@ -54,7 +60,15 @@ try:
     datas += collect_data_files("browser_use")
 except Exception:
     pass
-for pkg in ("openai", "httpx", "certifi", "browser_use", "playwright"):
+try:
+    datas += collect_data_files("tkinterweb")
+except Exception:
+    pass
+try:
+    datas += collect_data_files("markdown")
+except Exception:
+    pass
+for pkg in ("openai", "httpx", "certifi", "browser_use", "playwright", "markdown", "tkinterweb"):
     try:
         datas += copy_metadata(pkg)
     except Exception:

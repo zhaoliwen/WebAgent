@@ -1,6 +1,7 @@
 """main.py 的桌面 GUI：输入 API Key 和任务提示，启动/停止 Manus agent，并实时显示日志。"""
 
 import asyncio
+import html
 import os
 import queue
 import sys
@@ -10,6 +11,9 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import scrolledtext
+
+import markdown
+from tkinterweb import HtmlFrame
 
 
 class ManusGUI:
@@ -86,14 +90,15 @@ class ManusGUI:
         )
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-        # 执行结果输出区域
+        # 执行结果：Markdown 转 HTML 后由内嵌浏览器控件渲染
         result_frame = tk.Frame(self.root)
         result_frame.pack(fill=tk.BOTH, expand=True, **pad)
         tk.Label(result_frame, text="执行结果:").pack(anchor=tk.W)
-        self.result_area = scrolledtext.ScrolledText(
-            result_frame, wrap=tk.WORD, state=tk.DISABLED, height=10
+        self.result_view = HtmlFrame(
+            result_frame, messages_enabled=False, vertical_scrollbar=True
         )
-        self.result_area.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        self.result_view.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        self._set_result("")
 
     # ---------- 日志 ----------
 
@@ -141,14 +146,107 @@ class ManusGUI:
         except Exception as e:
             self._ui_log(f"[提示] 写入错误日志失败: {e}")
 
-    # ---------- 执行结果 ----------
+    # ---------- 执行结果（Markdown -> HTML） ----------
+
+    def _wrap_result_html(self, body: str) -> str:
+        """包裹为完整 HTML 页面，便于内嵌浏览器渲染。"""
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  body {{
+    margin: 0;
+    padding: 12px 14px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #1f2937;
+    background: #ffffff;
+  }}
+  h1, h2, h3, h4 {{
+    margin: 1.1em 0 0.45em;
+    line-height: 1.3;
+    color: #111827;
+  }}
+  h1 {{ font-size: 1.45em; }}
+  h2 {{ font-size: 1.28em; }}
+  h3 {{ font-size: 1.12em; }}
+  p {{ margin: 0.55em 0; }}
+  ul, ol {{ margin: 0.45em 0 0.45em 1.3em; padding: 0; }}
+  li {{ margin: 0.2em 0; }}
+  a {{ color: #2563eb; }}
+  code {{
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+    background: #f3f4f6;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }}
+  pre {{
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }}
+  pre code {{
+    background: transparent;
+    padding: 0;
+  }}
+  blockquote {{
+    margin: 0.6em 0;
+    padding: 0.2em 0.8em;
+    border-left: 4px solid #d1d5db;
+    color: #4b5563;
+    background: #f9fafb;
+  }}
+  table {{
+    border-collapse: collapse;
+    margin: 0.7em 0;
+    width: 100%;
+  }}
+  th, td {{
+    border: 1px solid #d1d5db;
+    padding: 6px 10px;
+    text-align: left;
+  }}
+  th {{ background: #f3f4f6; }}
+  hr {{
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1em 0;
+  }}
+</style>
+</head>
+<body>
+{body}
+</body>
+</html>"""
+
+    def _markdown_to_html_body(self, text: str) -> str:
+        """将结果文本转为 HTML 正文。错误堆栈用纯文本，避免被当成标签。"""
+        stripped = text.strip()
+        if not stripped:
+            return "<p></p>"
+
+        # 停止提示、Python 堆栈等按纯文本展示
+        if stripped.startswith("[任务已停止]") or stripped.startswith(
+            "Traceback"
+        ) or "\nTraceback (most recent call last):" in text[:800]:
+            return f"<pre>{html.escape(text)}</pre>"
+
+        return markdown.markdown(
+            text,
+            extensions=["fenced_code", "tables", "nl2br", "sane_lists"],
+            output_format="html",
+        )
 
     def _set_result(self, text: str):
-        self.result_area.configure(state=tk.NORMAL)
-        self.result_area.delete("1.0", tk.END)
-        self.result_area.insert(tk.END, text)
-        self.result_area.see(tk.END)
-        self.result_area.configure(state=tk.DISABLED)
+        body = self._markdown_to_html_body(text or "")
+        self.result_view.load_html(self._wrap_result_html(body))
 
     def _poll_result_queue(self):
         try:

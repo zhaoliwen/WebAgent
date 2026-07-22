@@ -10,6 +10,8 @@ fastapi~=0.115.11
 tiktoken~=0.9.0
 
 html2text~=2024.2.26
+markdown>=3.5
+tkinterweb>=3.23
 gymnasium~=1.1.1
 pillow~=10.4.0
 browsergym~=0.13.3
