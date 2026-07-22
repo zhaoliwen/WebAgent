@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>按钮点击测试</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px;
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    h1 {
+      margin: 0 0 20px;
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    button {
+      min-width: 64px;
+      height: 44px;
+      padding: 0 16px;
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      background: #eef2ff;
+      color: #312e81;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #e0e7ff;
+    }
+    button:active {
+      background: #c7d2fe;
+    }
+    .results {
+      display: grid;
+      gap: 8px;
+      max-width: 320px;
+    }
+    .result-item {
+      padding: 10px 12px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>按钮点击测试</h1>
+  <div class="buttons" id="buttons"></div>
+  <div class="results" id="results"></div>
+
+  <script>
+    const counts = Array(10).fill(0);
+    const buttonsEl = document.getElementById("buttons");
+    const resultsEl = document.getElementById("results");
+
+    function renderResults() {
+      resultsEl.innerHTML = counts
+        .map((count, i) => `<div class="result-item">按钮 ${i + 1}：点击 ${count} 次</div>`)
+        .join("");
+    }
+
+    for (let i = 1; i <= 10; i++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = String(i);
+      btn.addEventListener("click", () => {
+        counts[i - 1] += 1;
+        renderResults();
+      });
+      buttonsEl.appendChild(btn);
+    }
+
+    renderResults();
+  </script>
+</body>
+</html>
