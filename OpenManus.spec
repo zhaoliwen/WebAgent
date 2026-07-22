@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""OpenManus Windows 打包配置（PyInstaller）。
+"""livan Windows 打包配置（PyInstaller）。
 
 用法（推荐走 build_windows.ps1）：
   pyinstaller --noconfirm --clean OpenManus.spec
@@ -105,7 +105,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="OpenManus",
+    name="livan",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -126,5 +126,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="OpenManus",
+    name="livan",
 )

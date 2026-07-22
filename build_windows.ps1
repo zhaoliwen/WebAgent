@@ -1,6 +1,6 @@
-﻿# OpenManus Windows one-click build script
+﻿# livan Windows one-click build script
 # Usage: .\build_windows.ps1
-# Output: dist\OpenManus\  (zip this folder to distribute)
+# Output: dist\livan\  (zip this folder to distribute)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -8,7 +8,7 @@ Set-Location $Root
 
 $VenvPython = Join-Path $Root "my_ai_env\Scripts\python.exe"
 $VenvPip = Join-Path $Root "my_ai_env\Scripts\pip.exe"
-$DistDir = Join-Path $Root "dist\OpenManus"
+$DistDir = Join-Path $Root "dist\livan"
 
 Write-Host "==> Checking venv..." -ForegroundColor Cyan
 if (-not (Test-Path $VenvPython)) {

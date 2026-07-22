@@ -1,6 +1,9 @@
 import asyncio
 import base64
 import json
+import os
+import sys
+from pathlib import Path
 from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import Field, field_validator
@@ -22,6 +25,52 @@ def _load_browser_use():
     from browser_use.dom.service import DomService
 
     return BrowserUseBrowser, BrowserConfig, BrowserContext, BrowserContextConfig, DomService
+
+
+def _is_frozen() -> bool:
+    return bool(getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"))
+
+
+def _resolve_chrome_executable() -> Optional[str]:
+    """解析本机真实浏览器路径，避免打包后误把 livan.exe 当浏览器启动。"""
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    program_files = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+    program_files_x86 = Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
+
+    candidates: list[Path] = []
+    ms_playwright = local / "ms-playwright"
+    if ms_playwright.is_dir():
+        # 优先新版本 chromium
+        candidates.extend(
+            sorted(ms_playwright.glob("chromium-*/chrome-win/chrome.exe"), reverse=True)
+        )
+
+    candidates.extend(
+        [
+            program_files / "Google" / "Chrome" / "Application" / "chrome.exe",
+            program_files_x86 / "Google" / "Chrome" / "Application" / "chrome.exe",
+            local / "Google" / "Chrome" / "Application" / "chrome.exe",
+            program_files / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            program_files_x86 / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        ]
+    )
+
+    self_exe = Path(sys.executable).resolve()
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            resolved = path.resolve()
+            # 绝不能把自身 exe 当成浏览器
+            if resolved == self_exe or resolved.name.lower() in (
+                "livan.exe",
+                "openmanus.exe",
+            ):
+                continue
+            return str(resolved)
+        except OSError:
+            continue
+    return None
 
 
 
@@ -186,6 +235,35 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     if value is not None:
                         if not isinstance(value, list) or value:
                             browser_config_kwargs[attr] = value
+
+            # 打包环境下：若未配置或误配置了 chrome 路径，强制绑定真实浏览器
+            configured = browser_config_kwargs.get("chrome_instance_path")
+            if configured:
+                try:
+                    cfg_path = Path(str(configured)).resolve()
+                    if (
+                        cfg_path == Path(sys.executable).resolve()
+                        or cfg_path.name.lower() in ("livan.exe", "openmanus.exe")
+                    ):
+                        logger.warning(
+                            "chrome_instance_path 指向 livan 自身，已忽略该配置"
+                        )
+                        browser_config_kwargs.pop("chrome_instance_path", None)
+                        configured = None
+                except OSError:
+                    browser_config_kwargs.pop("chrome_instance_path", None)
+                    configured = None
+
+            if not browser_config_kwargs.get("chrome_instance_path") and _is_frozen():
+                chrome_path = _resolve_chrome_executable()
+                if chrome_path:
+                    browser_config_kwargs["chrome_instance_path"] = chrome_path
+                    logger.info(f"打包模式使用本机浏览器: {chrome_path}")
+                else:
+                    logger.warning(
+                        "未找到本机 Chrome/Edge/Playwright Chromium，"
+                        "打开浏览器时可能再次启动 livan 自身"
+                    )
 
             self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
 

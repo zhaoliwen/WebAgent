@@ -11,17 +11,23 @@ def _bootstrap_frozen() -> None:
 
     1. 工作目录切到 exe 所在目录，保证旁路 config/、workspace/ 可读
     2. windowed 模式下 stdout/stderr 为 None，会导致日志/部分库异常被吞掉
+    3. 指定 Playwright 浏览器目录，避免 frozen 下默认 PATH=0 找不到 Chromium
     """
     exe_dir = Path(sys.executable).resolve().parent
     is_frozen = (
         getattr(sys, "frozen", False)
         or hasattr(sys, "_MEIPASS")
-        or ((exe_dir / "_internal").is_dir() and (exe_dir / "OpenManus.exe").is_file())
+        or ((exe_dir / "_internal").is_dir() and (exe_dir / "livan.exe").is_file())
     )
     if not is_frozen:
         return
 
     os.chdir(exe_dir)
+
+    # 必须在 Playwright 初始化前设置；其内部对 frozen 会 setdefault("0")
+    ms_playwright = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+    if ms_playwright.is_dir():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(ms_playwright)
 
     log_dir = exe_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -31,6 +37,7 @@ def _bootstrap_frozen() -> None:
         f"frozen={getattr(sys, 'frozen', None)} "
         f"meipass={getattr(sys, '_MEIPASS', None)} "
         f"exe={sys.executable}\n"
+        f"PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}\n"
     )
     runtime_log.flush()
     if sys.stdout is None:
@@ -76,6 +83,11 @@ async def main():
 if __name__ == "__main__":
     # Windows 打包后子进程/部分依赖需要
     multiprocessing.freeze_support()
+
+    # 若被误当成 Chrome 拉起（带调试端口参数），直接退出，避免再开一份 GUI
+    if any(str(a).startswith("--remote-debugging-port") for a in sys.argv[1:]):
+        sys.exit(0)
+
     _bootstrap_frozen()
 
     if "--prompt" in sys.argv:

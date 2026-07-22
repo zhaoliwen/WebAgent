@@ -15,7 +15,7 @@ from tkinter import scrolledtext
 class ManusGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("OpenManus - Manus Agent")
+        self.root.title("livan")
         self.root.geometry("860x780")
 
         self.log_queue: queue.Queue = queue.Queue()
