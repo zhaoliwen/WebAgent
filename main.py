@@ -1,14 +1,54 @@
 import argparse
 import asyncio
+import multiprocessing
+import os
+import sys
+from pathlib import Path
 
-from app.logger import logger
+
+def _bootstrap_frozen() -> None:
+    """打包为 exe 后的启动修复（与 python main.py 的关键差异）。
+
+    1. 工作目录切到 exe 所在目录，保证旁路 config/、workspace/ 可读
+    2. windowed 模式下 stdout/stderr 为 None，会导致日志/部分库异常被吞掉
+    """
+    exe_dir = Path(sys.executable).resolve().parent
+    is_frozen = (
+        getattr(sys, "frozen", False)
+        or hasattr(sys, "_MEIPASS")
+        or ((exe_dir / "_internal").is_dir() and (exe_dir / "OpenManus.exe").is_file())
+    )
+    if not is_frozen:
+        return
+
+    os.chdir(exe_dir)
+
+    log_dir = exe_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    runtime_log = open(log_dir / "runtime.log", "a", encoding="utf-8", buffering=1)
+    runtime_log.write(
+        f"\n===== boot =====\n"
+        f"frozen={getattr(sys, 'frozen', None)} "
+        f"meipass={getattr(sys, '_MEIPASS', None)} "
+        f"exe={sys.executable}\n"
+    )
+    runtime_log.flush()
+    if sys.stdout is None:
+        sys.stdout = runtime_log
+    if sys.stderr is None:
+        sys.stderr = runtime_log
 
 
 async def main():
+    from app.logger import logger
+
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="运行 Manus agent")
     parser.add_argument(
-        "--prompt", type=str, required=False, help="帮我再百度搜索一下：今日A股上证指数的收盘价是多少？"
+        "--prompt",
+        type=str,
+        required=False,
+        help="帮我再百度搜索一下：今日A股上证指数的收盘价是多少？",
     )
     args = parser.parse_args()
 
@@ -34,7 +74,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    import sys
+    # Windows 打包后子进程/部分依赖需要
+    multiprocessing.freeze_support()
+    _bootstrap_frozen()
 
     if "--prompt" in sys.argv:
         # 命令行模式：直接执行，不启动 GUI

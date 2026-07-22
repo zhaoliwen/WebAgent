@@ -1,13 +1,8 @@
 import asyncio
 import base64
 import json
-from typing import Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
-from browser_use import Browser as BrowserUseBrowser
-from browser_use import BrowserConfig
-from browser_use.browser.context import BrowserContext, BrowserContextConfig
-from browser_use.dom.service import DomService
-from browser_use.dom.views import DOMElementNode
 from pydantic import Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
@@ -17,6 +12,17 @@ from app.logger import logger
 from app.tool.base import BaseTool, ToolResult
 from app.tool.web_search import WebSearch
 from app.tool.element_classifier import ElementClassifier, ElementCategory
+
+
+def _load_browser_use():
+    """延迟导入 browser_use，避免打包时拖入 torch 等原生库导致 DLL 初始化失败。"""
+    from browser_use import Browser as BrowserUseBrowser
+    from browser_use import BrowserConfig
+    from browser_use.browser.context import BrowserContext, BrowserContextConfig
+    from browser_use.dom.service import DomService
+
+    return BrowserUseBrowser, BrowserConfig, BrowserContext, BrowserContextConfig, DomService
+
 
 
 _BROWSER_DESCRIPTION = """\
@@ -125,9 +131,9 @@ class BrowserUseTool(BaseTool, Generic[Context]):
     }
 
     lock: asyncio.Lock = Field(default_factory=asyncio.Lock)
-    browser: Optional[BrowserUseBrowser] = Field(default=None, exclude=True)
-    context: Optional[BrowserContext] = Field(default=None, exclude=True)
-    dom_service: Optional[DomService] = Field(default=None, exclude=True)
+    browser: Optional[Any] = Field(default=None, exclude=True)
+    context: Optional[Any] = Field(default=None, exclude=True)
+    dom_service: Optional[Any] = Field(default=None, exclude=True)
     web_search_tool: WebSearch = Field(default_factory=WebSearch, exclude=True)
     element_classifier: ElementClassifier = Field(default_factory=ElementClassifier, exclude=True)
 
@@ -142,8 +148,16 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             raise ValueError("Parameters cannot be empty")
         return v
 
-    async def _ensure_browser_initialized(self) -> BrowserContext:
+    async def _ensure_browser_initialized(self) -> Any:
         """确保浏览器和上下文已初始化。"""
+        (
+            BrowserUseBrowser,
+            BrowserConfig,
+            BrowserContext,
+            BrowserContextConfig,
+            DomService,
+        ) = _load_browser_use()
+
         if self.browser is None:
             browser_config_kwargs = {"headless": False, "disable_security": True}
 
@@ -481,7 +495,7 @@ Page content:
                 return ToolResult(error=f"Browser action '{action}' failed: {str(e)}")
 
     async def get_current_state(
-        self, context: Optional[BrowserContext] = None
+        self, context: Optional[Any] = None
     ) -> ToolResult:
         """
         获取当前浏览器状态作为 ToolResult。

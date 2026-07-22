@@ -7,7 +7,9 @@ from app.agent.toolcall import ToolCallAgent
 from app.logger import logger
 from app.prompt.browser import NEXT_STEP_PROMPT, SYSTEM_PROMPT
 from app.schema import Message, ToolChoice
-from app.tool import BrowserUseTool, Terminate, ToolCollection
+from app.tool.browser_use_tool import BrowserUseTool
+from app.tool.terminate import Terminate
+from app.tool.tool_collection import ToolCollection
 from app.tool.sandbox.sb_browser_tool import SandboxBrowserTool
 
 

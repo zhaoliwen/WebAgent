@@ -9,7 +9,8 @@ from app.llm import LLM
 from app.logger import logger
 from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT, _get_current_time
 from app.schema import Message
-from app.tool import Terminate, ToolCollection
+from app.tool.terminate import Terminate
+from app.tool.tool_collection import ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.browser_use_tool import BrowserUseTool
 from app.tool.mcp import MCPClients, MCPClientTool

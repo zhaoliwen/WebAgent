@@ -2,9 +2,12 @@ import os
 from pathlib import Path
 from datetime import datetime
 
+from app.config import PROJECT_ROOT
+
+
 def _load_knowledge_base() -> str:
-    """加载知识库文件内容"""
-    knowledge_dir = Path(__file__).parent.parent.parent / "knowledge"
+    """加载知识库文件内容（打包后使用 PROJECT_ROOT/knowledge）。"""
+    knowledge_dir = PROJECT_ROOT / "knowledge"
     knowledge_content = []
 
     if knowledge_dir.exists():

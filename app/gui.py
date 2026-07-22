@@ -3,8 +3,12 @@
 import asyncio
 import os
 import queue
+import sys
 import threading
+import traceback
 import tkinter as tk
+from datetime import datetime
+from pathlib import Path
 from tkinter import scrolledtext
 
 
@@ -99,7 +103,33 @@ class ManusGUI:
 
     def _enqueue_log(self, message):
         # loguru sink：在 agent 所在线程被调用，仅做入队，由 UI 线程消费
-        self.log_queue.put(str(message))
+        text = str(message)
+        if not text.endswith("\n"):
+            text += "\n"
+        self.log_queue.put(text)
+
+    def _ui_log(self, message: str):
+        """不依赖 loguru，直接把进度写到界面。"""
+        if not message.endswith("\n"):
+            message += "\n"
+        self.log_queue.put(message)
+
+    def _write_crash_log(self, text: str):
+        """将错误写入 exe 旁 logs/gui_error.log，方便打包后排查。"""
+        try:
+            from app.config import PROJECT_ROOT
+
+            log_dir = Path(PROJECT_ROOT) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            crash_path = log_dir / "gui_error.log"
+            with crash_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n===== {datetime.now().isoformat()} =====\n")
+                f.write(text)
+                if not text.endswith("\n"):
+                    f.write("\n")
+            self._ui_log(f"[提示] 详细错误已写入: {crash_path}")
+        except Exception as e:
+            self._ui_log(f"[提示] 写入错误日志失败: {e}")
 
     # ---------- 执行结果 ----------
 
@@ -127,9 +157,12 @@ class ManusGUI:
             return
 
         api_key = self.key_entry.get().strip()
-        if api_key:
-            # 必须在 app.config 加载前设置，配置加载时会读取该环境变量
-            os.environ["DASHSCOPE_API_KEY"] = api_key
+        if not api_key:
+            self._append_log("[提示] 请先填写 API Key。\n")
+            return
+
+        # 必须在创建 LLM 客户端前设置
+        os.environ["DASHSCOPE_API_KEY"] = api_key
 
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
@@ -152,44 +185,80 @@ class ManusGUI:
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_until_complete(self._agent_coro(prompt, api_key))
+        except Exception:
+            tb = traceback.format_exc()
+            self._ui_log(f"[致命错误]\n{tb}")
+            self.result_queue.put(tb)
+            self._write_crash_log(tb)
         finally:
-            self._loop.close()
+            try:
+                self._loop.close()
+            except Exception:
+                pass
             self._loop = None
             self._task = None
             self.root.after(0, self._reset_buttons)
 
     async def _agent_coro(self, prompt: str, api_key: str):
-        from app.agent.manus import Manus
-        from app.config import config
-        from app.logger import logger
+        agent = None
+        try:
+            self._ui_log("[进度] 正在加载模块...")
+            from app.agent.manus import Manus
+            from app.config import PROJECT_ROOT, config
+            from app.llm import LLM
+            from app.logger import logger
 
-        # 输入框中的 key 优先于 config.toml 中的 api_key
-        if api_key:
+            self._ui_log(f"[进度] 项目目录: {PROJECT_ROOT}")
+
+            # 输入框中的 key 优先；并清掉旧 LLM 单例，避免沿用空 key 创建的客户端
             config.llm["default"].api_key = api_key
             if "vision" in config.llm:
                 config.llm["vision"].api_key = api_key
+            LLM._instances.clear()
+            self._ui_log(
+                f"[进度] 已注入 API Key（长度 {len(api_key)}），"
+                f"模型={config.llm['default'].model}"
+            )
 
-        # 将 logger 输出同时转发到 GUI 日志区域
-        self._log_handler_id = logger.add(self._enqueue_log)
+            # 将 logger 输出同时转发到 GUI 日志区域
+            self._log_handler_id = logger.add(
+                self._enqueue_log,
+                level="DEBUG",
+                format="{time:HH:mm:ss} | {level:<8} | {message}",
+                enqueue=True,
+            )
 
-        agent = await Manus.create()
-        try:
+            self._ui_log("[进度] 正在创建 Manus agent...")
+            agent = await Manus.create()
+            self._ui_log("[进度] Agent 已创建，开始执行任务...")
+
             self._task = asyncio.ensure_future(agent.run(prompt))
             result = await self._task
-            self.log_queue.put("[任务] 请求处理完成。\n")
+            self._ui_log("[任务] 请求处理完成。")
             # 将 agent.run 返回值写入结果区域
             self.result_queue.put(result if result else "(无返回结果)")
         except asyncio.CancelledError:
-            self.log_queue.put("[任务] 已被用户停止。\n")
+            self._ui_log("[任务] 已被用户停止。")
             self.result_queue.put("[任务已停止]")
-        except Exception as e:
-            self.log_queue.put(f"[错误] {e}\n")
-            self.result_queue.put(f"[错误] {e}")
+        except Exception:
+            tb = traceback.format_exc()
+            self._ui_log(f"[错误]\n{tb}")
+            self.result_queue.put(tb)
+            self._write_crash_log(tb)
         finally:
             if self._log_handler_id is not None:
-                logger.remove(self._log_handler_id)
+                try:
+                    from app.logger import logger
+
+                    logger.remove(self._log_handler_id)
+                except Exception:
+                    pass
                 self._log_handler_id = None
-            await agent.cleanup()
+            if agent is not None:
+                try:
+                    await agent.cleanup()
+                except Exception as e:
+                    self._ui_log(f"[提示] cleanup 异常: {e}")
 
     def _reset_buttons(self):
         self.start_btn.configure(state=tk.NORMAL)
@@ -201,6 +270,35 @@ class ManusGUI:
 
 
 def run_gui():
+    # 启动诊断：同时写 TEMP 与 exe 旁，避免路径识别错误时完全看不到日志
+    boot_lines = [
+        f"frozen={getattr(sys, 'frozen', None)}",
+        f"meipass={getattr(sys, '_MEIPASS', None)}",
+        f"exe={sys.executable}",
+        f"cwd={os.getcwd()}",
+        f"argv={sys.argv!r}",
+    ]
+    try:
+        from app.config import PROJECT_ROOT
+
+        boot_lines.append(f"PROJECT_ROOT={PROJECT_ROOT}")
+        boot_lines.append(
+            f"config_exists={(PROJECT_ROOT / 'config' / 'config.toml').exists()}"
+        )
+    except Exception as e:
+        boot_lines.append(f"config_import_error={e!r}")
+
+    boot_text = "\n".join(boot_lines) + "\n"
+    for target in (
+        Path(os.environ.get("TEMP", ".")) / "openmanus_boot.log",
+        Path(sys.executable).resolve().parent / "logs" / "gui_boot.log",
+    ):
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(boot_text, encoding="utf-8")
+        except Exception:
+            pass
+
     root = tk.Tk()
     ManusGUI(root)
     root.mainloop()

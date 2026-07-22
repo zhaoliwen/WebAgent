@@ -23,10 +23,16 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
     _logger.remove()
     # 无控制台打包（windowed）时 sys.stderr 为 None，不能作为 loguru sink
     if sys.stderr is not None:
-        _logger.add(sys.stderr, level=print_level)
+        _logger.add(sys.stderr, level=print_level, enqueue=True)
     log_dir = PROJECT_ROOT / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    _logger.add(log_dir / f"{log_name}.log", level=logfile_level)
+    # enqueue=True：GUI 在子线程写日志时更稳妥；用 str 路径避免个别环境下 Path 异常
+    _logger.add(
+        str(log_dir / f"{log_name}.log"),
+        level=logfile_level,
+        enqueue=True,
+        encoding="utf-8",
+    )
     return _logger
 
 

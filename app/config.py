@@ -14,8 +14,12 @@ def get_project_root() -> Path:
 
     打包为 exe 后，以可执行文件所在目录为根，便于旁路放置 config/、workspace/ 等。
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+    exe_dir = Path(sys.executable).resolve().parent
+    # PyInstaller 正常会设置 frozen/_MEIPASS；再加旁路探测防止标记异常
+    if getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"):
+        return exe_dir
+    if (exe_dir / "_internal").is_dir() and (exe_dir / "config" / "config.toml").is_file():
+        return exe_dir
     return Path(__file__).resolve().parent.parent
 
 
