@@ -24,6 +24,8 @@ class ManusGUI:
         self._task: asyncio.Task | None = None
         self._log_handler_id: int | None = None
         self._worker_thread: threading.Thread | None = None
+        # 用户点击停止时置 True，打断当前轮并阻止开启下一轮
+        self._stop_requested = False
 
         self._build_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -51,7 +53,7 @@ class ManusGUI:
         self.prompt_text = tk.Text(prompt_frame, height=5, wrap=tk.WORD)
         self.prompt_text.pack(fill=tk.X, pady=(5, 0))
 
-        # 开始 / 停止按钮
+        # 开始 / 停止按钮 + 循环执行
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(fill=tk.X, **pad)
         self.start_btn = tk.Button(
@@ -66,6 +68,14 @@ class ManusGUI:
             state=tk.DISABLED,
         )
         self.stop_btn.pack(side=tk.LEFT, padx=(10, 0))
+        # 勾选后：本轮结束后用相同提示词自动开启下一轮；运行中取消勾选则本轮结束后停止
+        self.loop_var = tk.BooleanVar(value=False)
+        self.loop_check = tk.Checkbutton(
+            btn_frame,
+            text="循环执行",
+            variable=self.loop_var,
+        )
+        self.loop_check.pack(side=tk.LEFT, padx=(16, 0))
 
         # 日志输出区域（支持滚动）
         log_frame = tk.Frame(self.root)
@@ -164,10 +174,12 @@ class ManusGUI:
         # 必须在创建 LLM 客户端前设置
         os.environ["DASHSCOPE_API_KEY"] = api_key
 
+        self._stop_requested = False
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
         self._set_result("")  # 开始新任务前清空上次结果
-        self._append_log(f"[任务] 开始执行: {prompt}\n")
+        loop_hint = "（已开启循环执行）" if self.loop_var.get() else ""
+        self._append_log(f"[任务] 开始执行{loop_hint}: {prompt}\n")
 
         self._worker_thread = threading.Thread(
             target=self._run_agent, args=(prompt, api_key), daemon=True
@@ -175,9 +187,12 @@ class ManusGUI:
         self._worker_thread.start()
 
     def stop_task(self):
+        self._stop_requested = True
         if self._loop and self._task and not self._task.done():
             self._loop.call_soon_threadsafe(self._task.cancel)
             self._append_log("[任务] 正在停止...\n")
+        elif self._worker_thread and self._worker_thread.is_alive():
+            self._append_log("[任务] 已请求停止，将在本轮结束后退出循环。\n")
         self.stop_btn.configure(state=tk.DISABLED)
 
     def _run_agent(self, prompt: str, api_key: str):
@@ -200,7 +215,7 @@ class ManusGUI:
             self.root.after(0, self._reset_buttons)
 
     async def _agent_coro(self, prompt: str, api_key: str):
-        agent = None
+        """执行任务；若勾选循环执行，则每轮结束后用相同提示词开启新一轮。"""
         try:
             self._ui_log("[进度] 正在加载模块...")
             from app.agent.manus import Manus
@@ -228,23 +243,52 @@ class ManusGUI:
                 enqueue=True,
             )
 
-            self._ui_log("[进度] 正在创建 Manus agent...")
-            agent = await Manus.create()
-            self._ui_log("[进度] Agent 已创建，开始执行任务...")
+            round_idx = 0
+            while not self._stop_requested:
+                round_idx += 1
+                agent = None
+                try:
+                    if round_idx > 1:
+                        self._ui_log(f"[任务] 循环执行：开始第 {round_idx} 轮...")
+                    else:
+                        self._ui_log("[进度] 正在创建 Manus agent...")
 
-            self._task = asyncio.ensure_future(agent.run(prompt))
-            result = await self._task
-            self._ui_log("[任务] 请求处理完成。")
-            # 将 agent.run 返回值写入结果区域
-            self.result_queue.put(result if result else "(无返回结果)")
-        except asyncio.CancelledError:
-            self._ui_log("[任务] 已被用户停止。")
-            self.result_queue.put("[任务已停止]")
-        except Exception:
-            tb = traceback.format_exc()
-            self._ui_log(f"[错误]\n{tb}")
-            self.result_queue.put(tb)
-            self._write_crash_log(tb)
+                    agent = await Manus.create()
+                    self._ui_log(
+                        f"[进度] Agent 已创建，开始执行任务"
+                        f"（第 {round_idx} 轮）..."
+                    )
+
+                    self._task = asyncio.ensure_future(agent.run(prompt))
+                    result = await self._task
+                    self._ui_log(f"[任务] 第 {round_idx} 轮处理完成。")
+                    self.result_queue.put(result if result else "(无返回结果)")
+                except asyncio.CancelledError:
+                    self._ui_log("[任务] 已被用户停止。")
+                    self.result_queue.put("[任务已停止]")
+                    self._stop_requested = True
+                    break
+                except Exception:
+                    tb = traceback.format_exc()
+                    self._ui_log(f"[错误]\n{tb}")
+                    self.result_queue.put(tb)
+                    self._write_crash_log(tb)
+                    # 出错不再自动开下一轮，避免错误循环刷屏
+                    break
+                finally:
+                    if agent is not None:
+                        try:
+                            await agent.cleanup()
+                        except Exception as e:
+                            self._ui_log(f"[提示] cleanup 异常: {e}")
+                    self._task = None
+
+                if self._stop_requested:
+                    break
+                # 每轮结束后再读复选框：运行中取消勾选则本轮结束后停止
+                if not self.loop_var.get():
+                    break
+                self._ui_log("[任务] 循环执行：即将用相同提示词开启下一轮...")
         finally:
             if self._log_handler_id is not None:
                 try:
@@ -254,11 +298,6 @@ class ManusGUI:
                 except Exception:
                     pass
                 self._log_handler_id = None
-            if agent is not None:
-                try:
-                    await agent.cleanup()
-                except Exception as e:
-                    self._ui_log(f"[提示] cleanup 异常: {e}")
 
     def _reset_buttons(self):
         self.start_btn.configure(state=tk.NORMAL)
