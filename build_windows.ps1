@@ -18,6 +18,13 @@ if (-not (Test-Path $VenvPython)) {
 Write-Host "==> Installing/updating PyInstaller..." -ForegroundColor Cyan
 & $VenvPip install -U pyinstaller
 
+# GUI 结果区 Markdown 渲染依赖（必须打进 exe）
+Write-Host "==> Ensuring GUI markdown deps..." -ForegroundColor Cyan
+& $VenvPip install "markdown>=3.5" "tkinterweb>=3.23"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to install markdown/tkinterweb"
+}
+
 Write-Host "==> Building (may take several minutes)..." -ForegroundColor Cyan
 & $VenvPython -m PyInstaller --noconfirm --clean (Join-Path $Root "OpenManus.spec")
 if ($LASTEXITCODE -ne 0) {

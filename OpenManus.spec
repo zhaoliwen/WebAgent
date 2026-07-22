@@ -5,47 +5,69 @@
   pyinstaller --noconfirm --clean OpenManus.spec
 """
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_submodules,
+    copy_metadata,
+)
 
 block_cipher = None
 
-hiddenimports = collect_submodules("app") + [
-    "tkinter",
-    "tkinter.scrolledtext",
-    "markdown",
-    "markdown.extensions.fenced_code",
-    "markdown.extensions.tables",
-    "markdown.extensions.nl2br",
-    "markdown.extensions.sane_lists",
-    "tkinterweb",
-    "pydantic",
-    "pydantic_core",
-    "loguru",
-    "openai",
-    "httpx",
-    "httpx._transports.default",
-    "tiktoken",
-    "tiktoken_ext",
-    "tiktoken_ext.openai_public",
-    "tomllib",
-    "certifi",
-    "anyio",
-    "anyio._backends._asyncio",
-    "mcp",
-    "mcp.client",
-    "mcp.client.sse",
-    "mcp.client.stdio",
-    "multiprocessing",
-    "multiprocessing.popen_spawn_win32",
-    # 浏览器相关按需加载；仍列入 hiddenimports，便于真正使用时可用
-    "browser_use",
-    "playwright",
-    "playwright.sync_api",
-    "playwright.async_api",
-    "greenlet",
-]
+# 强制完整收集 GUI Markdown 渲染依赖（避免 Analysis 漏包导致 exe 启动失败）
+_md_datas, _md_binaries, _md_hiddenimports = collect_all("markdown")
+_tw_datas, _tw_binaries, _tw_hiddenimports = collect_all("tkinterweb")
+_th_datas, _th_binaries, _th_hiddenimports = collect_all("tkinterweb_tkhtml")
+
+hiddenimports = (
+    collect_submodules("app")
+    + collect_submodules("markdown")
+    + collect_submodules("tkinterweb")
+    + _md_hiddenimports
+    + _tw_hiddenimports
+    + _th_hiddenimports
+    + [
+        "tkinter",
+        "tkinter.scrolledtext",
+        "markdown",
+        "markdown.extensions.fenced_code",
+        "markdown.extensions.tables",
+        "markdown.extensions.nl2br",
+        "markdown.extensions.sane_lists",
+        "tkinterweb",
+        "tkinterweb_tkhtml",
+        "pydantic",
+        "pydantic_core",
+        "loguru",
+        "openai",
+        "httpx",
+        "httpx._transports.default",
+        "tiktoken",
+        "tiktoken_ext",
+        "tiktoken_ext.openai_public",
+        "tomllib",
+        "certifi",
+        "anyio",
+        "anyio._backends._asyncio",
+        "mcp",
+        "mcp.client",
+        "mcp.client.sse",
+        "mcp.client.stdio",
+        "multiprocessing",
+        "multiprocessing.popen_spawn_win32",
+        # 浏览器相关按需加载；仍列入 hiddenimports，便于真正使用时可用
+        "browser_use",
+        "playwright",
+        "playwright.sync_api",
+        "playwright.async_api",
+        "greenlet",
+    ]
+)
 
 datas = []
+datas += _md_datas
+datas += _tw_datas
+datas += _th_datas
 datas += collect_data_files("certifi")
 try:
     datas += collect_data_files("tiktoken")
@@ -60,15 +82,16 @@ try:
     datas += collect_data_files("browser_use")
 except Exception:
     pass
-try:
-    datas += collect_data_files("tkinterweb")
-except Exception:
-    pass
-try:
-    datas += collect_data_files("markdown")
-except Exception:
-    pass
-for pkg in ("openai", "httpx", "certifi", "browser_use", "playwright", "markdown", "tkinterweb"):
+for pkg in (
+    "openai",
+    "httpx",
+    "certifi",
+    "browser_use",
+    "playwright",
+    "markdown",
+    "tkinterweb",
+    "tkinterweb_tkhtml",
+):
     try:
         datas += copy_metadata(pkg)
     except Exception:
@@ -99,7 +122,7 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=["."],
-    binaries=[],
+    binaries=_md_binaries + _tw_binaries + _th_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
